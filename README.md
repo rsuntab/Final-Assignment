@@ -1,6 +1,4 @@
-# 472_assignment_template
+# Final Assignment for course MY472: Data for Data Scientists
 
-This repository contains two files:
-
-1) `template.Rmd` is an example RMarkdown file which contains the necessary code to meet the formatting requirements for MY472 assignments
-2) `template.html` is the knitted version of this file, to demonstrate how this formatting renders in practice
+This is the repository where it is stored the Final Assignment for the course MY472: Data for Data Scientists.
+This course is part of the MSc Applied Social Data Science offered at LSE. 
