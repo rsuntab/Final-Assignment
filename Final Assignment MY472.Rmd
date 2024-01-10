@@ -1,0 +1,1752 @@
+---
+Title: "Final Assignment MY472"
+Author: "202326921"
+Date: "10 January 2024"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+# 1. Introduction {#exercise-1}
+
+**“Rolling Stone Magazine ranked their 100 greatest musical artists of all time. At the end of 2023, how has their music endured? Are there any features or characteristics that seem to explain enduring engagement?”**
+
+Music, a ubiquitous presence in our lives, serves as a powerful cultural force. Understanding its evolution over time and unraveling the factors that contribute to the enduring impact of certain compositions is a compelling endeavor. This exploration seeks to dissect and analyze the elements that shape the longevity, influence, and broader impact of music.
+
+For more information about this project, you can find here the [Final Assignment MY472 GitHub Repository](https://github.com/rsuntab/Final-Assignment-MY472).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+# We will first load all the packages that we need for this assignment 
+library('DBI')
+library('RSQLite')
+library('rvest')
+library('RSelenium')
+library('httr') 
+library('dplyr')
+library('ggplot2')
+library('leaflet')
+library('rnaturalearth')
+library('stringr')
+library('plotly')
+library('shiny')
+library('tm')
+library('wordcloud2')
+```
+
+Before starting the work, we create a relational database that we call **'finalassignment'**, where we will store all the information that we need for the analysis. 
+
+```{r}
+
+# STEP 1. CREATING THE RELATIONAL DATABASE -----------------------------------
+
+# We create the path to a SQLite database file 
+mydatabase <- "./database/finalassignment.sqlite"
+
+#We create the connection to this database
+connection <- dbConnect(RSQLite::SQLite(), mydatabase)
+
+#We check for the existence of the relational database
+if (file.exists(mydatabase)) {
+  print("Database file exists.")
+} else {
+  print("Error: Database file not found.")
+}
+```
+
+# 2. Data {#exercise-2}
+
+The data to be analyzed comes from four different sources of information, obtained through web scraping techniques for both structured and unstructured data. Packages such as 'rvest,' 'RSelenium,' or 'httr' are essential in this regard. Two of the sources used are mandatory:
+
+1) **Rolling Stone Magazine**: Provides information about the 100 greatest artists in history. Through it, we obtain their names and the ranking attributed to them.
+2) **Spotify API**: Provides information about the artists themselves. In this case, only some information about the artists, their albums, and their top tracks has been included, as it is the most relevant. It is worth noting that music genres have been grouped to simplify the analysis.
+    
+    
+This information has been structured into three different tables:
+
+```{r, eval = FALSE}
+
+# STEP 2. WE GET THE 100 ARTISTS' NAMES -------------------------------
+
+# We gather the artists data from the Rolling Stone article - Names and ranks of the 100 best artists of history
+
+# First, we construct a table where we are going to store the information
+artists_data <- data.frame(rank = character(), artist = character(), stringsAsFactors = FALSE)
+
+# Define the function to get artists
+get_artists <- function(const_name, sec = 4){
+  
+  # 1. Setup -----------------------------
+  # We establish the website  
+  url <- 'https://www.rollingstone.com/music/music-lists/100-greatest-artists-147446/'
+  
+  # We start the Selenium server:
+  rD <- rsDriver(browser=c("firefox"), verbose = F, port = netstat::free_port(random = TRUE), chromever = NULL) 
+  driver <- rD[["client"]] 
+  
+  # We navigate to the selected URL address
+  driver$navigate(url)
+  
+  # We wait for the page to load
+  Sys.sleep(3)
+  
+  # We accept the privacy terms
+  accept_button <- driver$findElement(using = "xpath", value = "//button[contains(text(), 'I Accept')]")
+  if (!is.null(accept_button)) {
+    accept_button$clickElement()
+  }  
+  
+  # We wait for the page to load
+  Sys.sleep(3)
+  
+  # Initialize the data frame
+  artists_data <- data.frame(rank = character(), artist = character(), stringsAsFactors = FALSE)
+  
+  # 2. Search and extract results ----------------------------------------
+  # Extract information for the first 50 artists
+  artists_1_50 <- driver$findElements("css selector", ".c-gallery-vertical-album")
+  
+  for (index in seq_along(artists_1_50)) {
+    # Extract title
+    title_element <- artists_1_50[[index]]$findChildElements("css selector", ".c-gallery-vertical-album__title")
+    title <- sapply(title_element, function(x) unlist(x$getElementText()))
+    
+    # Extract number
+    number_element <- artists_1_50[[index]]$findChildElements("css selector", ".c-gallery-vertical-album__number")
+    number <- sapply(number_element, function(x) unlist(x$getElementText()))
+    
+    # Add to the data frame
+    artists_data <- rbind(artists_data, data.frame(rank = number, artist = title, stringsAsFactors = FALSE))
+  }
+  
+  # 3. Load more information ----------------------------------------------
+  # We load the last 50 artists in the list
+  load_more_button <- driver$findElement("css selector", ".c-gallery-vertical__load-button")
+  if (!is.null(load_more_button)) {
+      load_more_button$clickElement()
+      Sys.sleep(10)  
+    
+  # Check for a potential "Cancel" button and click it if it exists
+  allow_button <- driver$findElement("css selector", ".align-right.secondary.slidedown-button")
+  
+  if (!is.null(allow_button)) {
+  allow_button$clickElement()
+  Sys.sleep(3)  
+  } else {
+  cat("Cancel button not found. Continue without clicking.\n")
+  }
+  
+  # 4. Search and extract more results -----------------------------------
+  # Extract information for the last 50 artists
+  artists_50_1 <- driver$findElements("css selector", ".c-gallery-vertical-album")
+  
+  for (index in seq_along(artists_50_1)) {
+    # Extract title
+    title_element <- artists_50_1[[index]]$findChildElements("css selector", ".c-gallery-vertical-album__title")
+    title <- sapply(title_element, function(x) unlist(x$getElementText()))
+    
+    # Extract number
+    number_element <- artists_50_1[[index]]$findChildElements("css selector", ".c-gallery-vertical-album__number")
+    number <- sapply(number_element, function(x) unlist(x$getElementText()))
+    
+    # Add to the data frame
+    artists_data <- rbind(artists_data, data.frame(rank = number, artist = title, stringsAsFactors = FALSE))
+  }
+  
+  # Close the browser
+  driver$close()
+  rD$server$stop()
+
+  return(artists_data)
+  }
+}
+
+# We store the output
+artists_data <- get_artists()
+#print(artists_data)
+
+```
+
+
+```{r}
+
+# STEP 3. WE CREATE A FUNCTION TO CHECK FOR THE TABLES  -----------------------------------------------
+
+# We create a function to test for the existence and dimensionality of the table
+check_table <- function(inputdatabase, inputtable) {
+  
+  if(file.exists(paste0("./database/",inputdatabase))){
+    
+    database <- paste0("./database/",inputdatabase)
+    con <- dbConnect(RSQLite::SQLite(), database)
+    
+      if (inputtable %in% dbListTables(con)) {
+        # Read the table into R
+        table_data <- dbReadTable(con, inputtable)
+        cat('Number of rows:', nrow(table_data),'\nNumber of columns:', ncol(table_data),'\nDifferent variables in the table:', paste(colnames(table_data), collapse = ', '),'\n')
+        dbDisconnect(con)
+        
+      } else {
+        cat("Error: Table not found in file.")
+      }
+  }
+  else{
+    print("Error: File not found in folder.")
+  }
+} 
+
+```
+
+```{r, eval = FALSE}
+
+# STEP 4. WE GET THE SPOTIFY INFORMATION FOR THE ARTISTS ---------------------------
+
+# First, we load our spotify api keys
+readRenviron("../spotifykeys.env")
+client_id <- Sys.getenv("client_id")
+client_secret <- Sys.getenv("client_secret")
+
+# Create the authorization string
+auth_string <- sprintf("%s:%s", client_id, client_secret)
+auth_base64 <- base64enc::base64encode(charToRaw(auth_string))
+
+# Set up the request
+token_url <- "https://accounts.spotify.com/api/token"
+headers <- c(
+  Authorization = paste("Basic", auth_base64),
+  "Content-Type" = "application/x-www-form-urlencoded"
+)
+body <- list(
+  grant_type = "client_credentials"
+)
+
+# Make the request
+response <- POST(
+  url = token_url,
+  add_headers(headers),
+  body = body,
+  encode = "form"
+)
+
+# Extract the access token
+token <- content(response)$access_token
+```
+
+```{r, eval=FALSE}
+
+# Second, we get the artists' IDs
+
+# Function to get Spotify ID by artist name
+get_artist_ids <- function(data_frame, access_token) {
+  
+  # 1. Setup -----------------------------------------------
+  # Setup Spotify API search endpoint URL
+  search_url <- "https://api.spotify.com/v1/search"
+  
+  # Create an empty vector to store the Spotify IDs
+  artist_ids <- character()
+  
+  # 2. Search ----------------------------------------------
+  # Iterate over each artist in the data frame
+  for (name in data_frame$artist) {
+    # Make a GET request to the Spotify API
+    response <- GET(
+      url = search_url,
+      query = list(q = name, type = "artist"),
+      add_headers(Authorization = paste("Bearer", access_token))
+    )
+    
+    # 3. Extract results -----------------------------------
+    # Check if the response is in JSON format
+    if (http_type(response) == "application/json") {
+      data <- content(response, "parsed")
+      
+      # Check if there are artists in the response
+      if ("artists" %in% names(data)) {
+        artists <- data$artists
+        
+        # Check if there are items in the artists response and get the first ID
+        if ("items" %in% names(artists) && length(artists$items) > 0) {
+          artist_ids <- c(artist_ids, artists$items[[1]]$id)
+        }
+      }
+    }
+  }
+  
+  # Add the 'id' column to the data frame
+  data_frame$id <- artist_ids
+  
+  return(data_frame)
+}
+
+# Get artist IDs and update the data frame
+artists_data <- get_artist_ids(artists_data, token)
+#print(artists_data)
+
+```
+
+```{r, eval=FALSE}
+
+# Third, we get the details for the artists
+
+# Combined Function to get Spotify IDs and details by artist name
+get_artist_details <- function(data_frame, access_token) {
+  
+  # 1. Setup --------------------------------------------------
+  # Setup Spotify API search endpoint URL
+  search_url <- "https://api.spotify.com/v1/search"
+  
+  # Create empty vectors to store artist details
+  followers <- numeric()
+  genres <- list()
+  popularity <- numeric()
+  
+  # 2. Search -------------------------------------------------
+  # Iterate over each artist in the data frame
+  for (name in data_frame$artist) {
+    # Make a GET request to the Spotify API
+    response <- GET(
+      url = search_url,
+      query = list(q = name, type = "artist"),
+      add_headers(Authorization = paste("Bearer", access_token))
+    )
+    
+    # Check if the response is in JSON format
+    if (http_type(response) == "application/json") {
+      data <- content(response, "parsed")
+      
+      # Check if there are artists in the response
+      if ("artists" %in% names(data)) {
+        artists <- data$artists
+        
+        # Check if there are items in the artists response and get the first ID
+        if ("items" %in% names(artists) && length(artists$items) > 0) {
+          artist_id <- artists$items[[1]]$id
+          
+          
+          # 3. Extract results ------------------------------------
+          # Get artist details for each ID
+          details_response <- GET(
+            url = paste0("https://api.spotify.com/v1/artists/", artist_id),
+            add_headers(Authorization = paste("Bearer", access_token))
+          )
+          
+          # Check if the details response is in JSON format
+          if (http_type(details_response) == "application/json") {
+            details <- content(details_response, "parsed")
+            
+            # Extract information and append to vectors
+            followers <- c(followers, details$followers$total)
+            genres <- c(genres, list(details$genres))
+            popularity <- c(popularity, details$popularity)
+          }
+        }
+      }
+    }
+  }
+  
+  # Add new variables to the data frame
+  data_frame$followers <- followers
+  data_frame$genres <- genres
+  data_frame$popularity <- popularity
+  
+  return(data_frame)
+}
+
+# Get artist details and update the data frame
+artists_data <- get_artist_details(artists_data, token)
+
+```
+
+
+```{r, eval=FALSE}
+
+# DATA SHAPE ----------------------------------------------
+
+# Before continuing, we need to create different groups based on the genre of the music
+
+# Flatten the 'genres' list into a character vector
+artists_data$genres <- sapply(artists_data$genres, function(genre_list) {
+  if (length(genre_list) > 0) {
+    return(toString(genre_list))
+  } else {
+    return(NA)
+  }
+}, USE.NAMES = FALSE)
+
+# Convert the 'genre' column to character type
+artists_data$genres <- as.character(artists_data$genres)
+
+# Split the genres into a list of genres
+artists_data$genres <- strsplit(artists_data$genres, ', ')
+
+# Check the different genres to divide them
+#all_genres <- unique(unlist(artists_data$genre))
+
+# We create the different groups - We set a function to do this
+map_to_category <- function(genres) {
+  if (any(is.na(genres))) {
+    return(NA)
+  } 
+  
+  # Count occurrences of each genre
+  genre_counts <- table(unlist(genres))
+  
+  # Identify the genre with the maximum count
+  majority_genre <- names(which.max(genre_counts))
+  
+  if (any(majority_genre %in% c("alternative rock", "dance rock", "funk rock", "new wave", "permanent wave", "rock", "zolo", "rock-and-roll", "rockabilly", "classic rock", "hard rock", "southern rock", "album rock", "heartland rock", "folk rock", "psychedelic rock", "blues rock", "soft rock", "industrial rock", "swamp rock", "progressive rock", "symphonic rock", "acid rock", "stoner rock", "electronic rock", "industrial", "post-grunge", "roots rock", "australian rock", "art rock", "experimental", "instrumental rock", "jam band", "mellow gold", "glam rock", "piano rock", "grunge", "irish rock", "british invasion", "merseybeat"))) {
+    return("Rock")
+  } else if (any(majority_genre %in% c("glam metal", "alternative metal", "birmingham metal", "uk doom metal", "thrash metal", "industrial metal", "nu metal"))) {
+    return("Metal")
+  } else if (any(majority_genre %in% c("punk", "art punk", "post-punk", "hardcore punk", "early us punk", "protopunk", "cyberpunk"))) {
+    return("Punk")
+  } else if (any(majority_genre %in% c("hip hop", "gangster rap", "pop rap", "rap", "g funk", "west coast rap", "detroit hip hop", "old school hip hop", "golden age hip hop", "old school thrash", "queens hip hop", "conscious hip hop", "hardcore hip hop", "political hip hop", "p funk", "east coast hip hop", "ganster rap"))) {
+    return("Hip Hop/Rap")
+  } else if (any(majority_genre %in% c("classic soul", "funk", "soul", "motown", "athens indie", "soul blues", "psychedelic soul", "neo soul", "northern soul", "jazz blues", "r&b", "instrumental soul", "chicago soul", "classic girl group", "memphis soul"))) {
+    return("Soul/R&B")
+  } else if (any(majority_genre %in% c("dance pop", "brill building pop", "pop", "sunshine pop", "beatlesque", "adult standards", "doo-wop", "baroque pop"))) {
+    return("Pop")
+  } else if (any(majority_genre %in% c("blues", "instrumental funk", "chicago blues", "delta blues", "harmonica blues", "memphis blues", "traditional blues", "electric blues", "acoustic blues", "piano blues", "jazz blues", "louisiana blues"))) {
+    return("Blues")
+  } else if (any(majority_genre %in% c("country", "honky tonk", "traditional country", "outlaw country", "arkansas country", "alternative country", "cosmic american", "country rock", "folk", "singer-songwriter", "canadian singer-songwriter", "cosmic american"))) {
+    return("Country/Folk")
+  } else if (any(majority_genre %in% c("vocal jazz", "jazz fusion", "jazz rock"))) {
+    return("Jazz")
+  } else if (any(majority_genre %in% c("reggae", "roots reggae"))) {
+    return("Reggae")
+  } else {
+    return("Other")
+  }
+}
+
+# Apply the mapping function to create a new 'genre_category' column
+artists_data$genre_category <- sapply(artists_data$genres, map_to_category)
+
+# Convert all columns to character - to be able to write it to the relational database
+artists_data[] <- lapply(artists_data, as.character)
+
+# Write to SQLite database
+dbWriteTable(connection, "artists_data", artists_data, overwrite = TRUE, keys = 'artist')
+
+```
+
+**Table 1: Artists' Data**
+
+```{r}
+# We check the final version of 'artists_data'
+check_table('finalassignment.sqlite', 'artists_data')
+```
+
+```{r, eval=FALSE}
+
+# STEP 5. WE GET THE SPOTIFY INFORMATION FOR THE ALBUMS -----------------------------
+
+# We create a function to get artist details and albums by artist name
+get_albums_data <- function(data_frame, access_token) {
+  
+  # 1. Setup ------------------------------------
+  # Setup Spotify API search endpoint URL
+  search_url <- "https://api.spotify.com/v1/search"
+
+  # Create empty data frame to store albums data
+  albums_data <- data.frame(
+    artist = character(),
+    total_tracks = numeric(),
+    album_name = character(),
+    release_date = character(),
+    album_type = character(),
+    available_markets = character(),  
+    stringsAsFactors = FALSE
+  )
+
+  # 2. Search -----------------------------------
+  # Iterate over each artist in the data frame
+  for (i in seq(nrow(data_frame))) {
+    artist <- data_frame$artist[i]
+
+    # Make a GET request to the Spotify API
+    response <- GET(
+      url = search_url,
+      query = list(q = artist, type = "artist"),
+      add_headers(Authorization = paste("Bearer", access_token))
+    )
+
+    # Check if the response is in JSON format
+    if (http_type(response) == "application/json") {
+      data <- content(response, "parsed")
+
+      # Check if there are artists in the response
+      if ("artists" %in% names(data)) {
+        artists <- data$artists
+
+        # Check if there are items in the artists response and get the first ID
+        if ("items" %in% names(artists) && length(artists$items) > 0) {
+          artist_id <- artists$items[[1]]$id
+          
+          # 3. Extract results ----------------------------------
+          # Get albums data for the artist
+          artist_albums_response <- GET(
+            url = paste0("https://api.spotify.com/v1/artists/", artist_id, "/albums?include_groups=album,single"),
+            add_headers(Authorization = paste("Bearer", access_token))
+          )
+
+          # Check if the albums response is in JSON format
+          if (http_type(artist_albums_response) == "application/json") {
+            artist_albums <- content(artist_albums_response, "parsed")
+
+            # Extract relevant information and append to albums data frame
+            if (!is.null(artist_albums$items)) {
+              for (album in artist_albums$items) {
+                albums_data <- rbind(
+                  albums_data,
+                  data.frame(
+                    artist = artist,
+                    total_tracks = album$total_tracks,
+                    album_name = album$name,
+                    release_date = album$release_date,
+                    album_type = album$album_group,
+                    available_markets = toString(album$available_markets),  
+                    stringsAsFactors = FALSE
+                  )
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return(albums_data)
+}
+
+# Get albums data and store it in the 'albums_data' data frame
+albums_data <- get_albums_data(artists_data, token)
+
+# We write this new table to our relational database
+dbWriteTable(connection, "albums_data", albums_data, overwrite = TRUE, keys='artist')
+
+```
+
+**Table 2: Albums' Data**
+
+```{r}
+# We check it
+check_table('finalassignment.sqlite', 'albums_data')
+```
+
+
+
+```{r, eval=FALSE}
+
+# STEP 6. WE GET THE SPOTIFY INFORMATION FOR THE TOP TRACKS -----------------------------
+
+# We create a function to get top tracks by artist name
+get_top_tracks_data <- function(data_frame, access_token) {
+  
+  # 1. Setup --------------------------------
+  # Create an empty data frame to store top tracks data
+  top_tracks_data <- data.frame(
+    artist = character(),
+    track_name = character(),
+    track_popularity = numeric(),
+    album_name = character(),
+    stringsAsFactors = FALSE
+  )
+
+  # 2. Search --------------------------------
+  # Iterate over each artist in the data frame
+  for (i in seq(nrow(data_frame))) {
+    artist <- data_frame$artist[i]
+    artist_id <- data_frame$id[i]
+
+    # 3. Extract results ----------------------------------
+    # Get top tracks data for the artist
+    artist_top_tracks_response <- GET(
+      url = paste0("https://api.spotify.com/v1/artists/", artist_id, "/top-tracks?country=US"),
+      add_headers(Authorization = paste("Bearer", access_token))
+    )
+
+    # Check if the top tracks response is in JSON format
+    if (http_type(artist_top_tracks_response) == "application/json") {
+      artist_top_tracks <- content(artist_top_tracks_response, "parsed")
+
+      # Extract relevant information and add to the top tracks data frame
+      if (!is.null(artist_top_tracks$tracks)) {
+        for (track in artist_top_tracks$tracks) {
+          top_tracks_data <- rbind(
+            top_tracks_data,
+            data.frame(
+              artist = artist,
+              track_name = track$name,
+              track_popularity = track$popularity,
+              album_name = track$album$name,
+              stringsAsFactors = FALSE
+            )
+          )
+        }
+      }
+    }
+  }
+
+  return(top_tracks_data)
+}
+
+# Get top tracks data and store it in the 'top_tracks_data' data frame
+top_tracks_data <- get_top_tracks_data(artists_data, token)
+
+# We write this new table to our relational database
+dbWriteTable(connection, "top_tracks_data", top_tracks_data, overwrite = TRUE, keys='artist')
+
+```
+
+**Table 3: Top Tracks' Data**
+
+```{r}
+# We check it
+check_table('finalassignment.sqlite', 'top_tracks_data')
+```
+
+Information has also been obtained from two other sources:
+
+3) **Grammy Awards**: Tracks the number of wins and nominations an artist has received from Grammy Awards. Artists not found on the Grammy Awards website are still included in the dataset with NA values.
+4) **Wikipedia**: Extracts information about the nationality of artists and their total years of activity, using information from ‘Origin’, ‘Born’ and ‘Years Active’ in Wikipedia.
+
+
+The structure of the tables is as follows:
+
+```{r, eval=FALSE}
+
+# STEP 7. WE GET GRAMMY AWARDS DATA -----------------------------------------
+
+# We construct the function to get the wins and nominations
+get_awards <- function(artists_data) {
+  
+  # 1. Setup ------------------------------------------
+  # Create a data frame with the extracted information
+  awards_data <- data.frame(
+    artist = character(),
+    wins = numeric(),
+    nominations = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  # Start a Selenium server
+  rD <- rsDriver(browser = "firefox", verbose = FALSE, port = netstat::free_port(random = TRUE), chromever = NULL) 
+  driver <- rD[["client"]] 
+  
+  # Navigate to the Grammy Awards website
+  driver$navigate("https://www.grammy.com/")
+  
+  Sys.sleep(3)
+  
+  # Find and click the "Accept All" button
+  accept_all_button <- driver$findElement("css selector", '.osano-cm-accept-all')
+  if (!is.null(accept_all_button)) {
+    accept_all_button$clickElement()
+    Sys.sleep(3)
+  }
+  
+  # Handle pop-up/modal (if it exists)
+  pop_up <- tryCatch(
+    driver$findElement("css selector", '.mc-closeModal'),
+    error = function(e) NULL
+  )
+  
+  if (!is.null(pop_up)) {
+    # Close the pop-up by clicking the button
+    pop_up$clickElement()
+  }
+  
+  # 2. Search ------------------------------------------
+  # Loop through each artist in the dataframe
+  for (i in 1:nrow(artists_data)) {
+    
+    # Find and click the search input field
+    search_input <- driver$findElement("xpath", '/html/body/div[3]/div/div/div/div/input')
+    search_input$clickElement()
+    
+    Sys.sleep(10)
+    
+    # Handle pop-up/modal (if it exists)
+    pop_up <- tryCatch(
+      driver$findElement("css selector", '.mc-closeModal'),
+      error = function(e) NULL
+    )
+    
+    if (!is.null(pop_up)) {
+      # Close the pop-up by clicking the button
+      pop_up$clickElement()
+    }
+    
+    Sys.sleep(3)
+    
+    # Re-find the search input after the interaction
+    search_input <- driver$findElement("css selector", '.form-node')
+    search_input$clickElement()
+
+    # Enter the artist name in the search input field
+    artist_name <- artists_data$artist[i]
+    search_input$sendKeysToElement(list(artist_name))
+      
+    # Wait for the search results to load
+    Sys.sleep(10)
+    
+    # Click on the first search result (assuming it is the artist page)
+    first_result <- tryCatch(
+      driver$findElement("xpath", '//*[@id="__next"]/div/div/div/div/div[6]/div/div[2]/div/div[1]/ul/li/article/div/div[2]/div[1]/div/h2/a'),
+      error = function(e) NULL
+    )
+    
+    # If the first result is not found, try a more flexible search
+    if (is.null(first_result)) {
+      # Clear the search input field
+      search_input$clearElement()
+      
+      # Try an alternative search with variations in the artist's name
+      alternative_names <- c(artist_name, gsub("The ", "", artist_name))
+      for (alt_name in alternative_names) {
+        # Clear the search input field before trying each alternative name
+        search_input$clearElement()
+        search_input$sendKeysToElement(list(alt_name))
+        Sys.sleep(10)
+        first_result <- tryCatch(
+          driver$findElement("xpath", '//*[@id="__next"]/div/div/div/div/div[6]/div/div[2]/div/div[1]/ul/li/article/div/div[2]/div[1]/div/h2/a'),
+          error = function(e) NULL
+        )
+        if (!is.null(first_result)) {
+          break  # Exit the loop if a match is found
+        }
+      }
+    }
+    
+    if (is.null(first_result)) {
+      # Skip to the next iteration of the loop if no match is found
+      next
+    }
+    
+    # Click on the first search result
+    first_result$clickElement()
+    
+    # Wait for the artist page to load
+    Sys.sleep(3)
+    
+    # 3. Extract results ------------------------------------------
+    # Extract and convert the number for wins using XPath in one line
+    wins <- as.numeric(gsub("\\D", "", driver$findElement("xpath", '//*[@id="__next"]/div/main/section/div[2]/div[2]/div[3]/div[1]/h1')$getElementText()))
+    
+    # Extract and convert the number for nominations using XPath in one line
+    nominations <- as.numeric(gsub("\\D", "", driver$findElement("xpath", '//*[@id="__next"]/div/main/section/div[2]/div[2]/div[3]/div[2]/h1')$getElementText()))
+      
+    # Append data to the awards_data data frame
+    artist_info <- data.frame(artist = artist_name, wins = as.numeric(wins), nominations = as.numeric(nominations))
+    awards_data <- rbind(awards_data, artist_info)
+    
+  }
+  
+  # Close the remote driver
+  driver$close()
+  
+  return(awards_data)
+}
+
+# We call the function
+awards_data <- get_awards(artists_data)
+
+# DATA SHAPE -----------------------------------------
+# 1) Get only one table with all the artists
+# We create a table where we join this information with the list of 100 artists
+awards_alldata <- data.frame(artists_data$artist)
+colnames(awards_alldata) <- 'artist'
+
+# We merge data frames based on the "artist" column (perform a left join)
+awards_data <- merge(awards_alldata, awards_data, by = "artist", all.x = TRUE)
+
+# We replace NAs in the wins and nominations columns with 0
+awards_data <- awards_data %>%
+  mutate(
+    wins = ifelse(is.na(wins), NA, wins),
+    nominations = ifelse(is.na(nominations), NA, nominations)
+  )
+
+
+# 2) We correct some wrong values
+# Correct values for 'The Ramones'
+awards_data$wins[awards_data$artist == 'The Ramones'] <- NA
+awards_data$nominations[awards_data$artist == 'The Ramones'] <- NA
+
+# Correct values for 'U2'
+awards_data$wins[awards_data$artist == 'U2'] <- 22
+awards_data$nominations[awards_data$artist == 'U2'] <- 46
+
+
+# We write this new table to our relational database
+dbWriteTable(connection, "awards_data", awards_data, overwrite = TRUE, keys='artist')
+
+
+```
+
+**Table 4: Awards' Data**
+
+```{r}
+# We check it
+check_table('finalassignment.sqlite', 'awards_data')
+```
+
+
+```{r, eval=FALSE}
+
+# STEP 8. WE GET WIKIPEDIA DATA ----------------------------------
+
+# We create a function to retrieve and store the data
+get_wikidata <- function(artist_data) {
+  
+  # 1. Setup ------------------------------------
+  # Create an empty data frame to store top tracks data
+  wikipedia_data <- data.frame(
+    artist = character(),
+    country = character(),
+    activity = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  # 2. Search -----------------------------------
+  for (artist in artist_data$artist) {
+    
+    # Specify the URL of the Wikipedia page using a general expression
+    if (artist == "Guns n’ Roses") {
+      wiki_url <- "https://en.wikipedia.org/wiki/Guns_N%27_Roses"
+    } else if (artist == "Parliament and Funkadelic") {
+      wiki_url <- "https://en.wikipedia.org/wiki/Parliament-Funkadelic"
+    } else if (artist == "Nirvana") {
+      wiki_url <- "https://en.wikipedia.org/wiki/Nirvana_(band)"
+    } else if (artist == "Queen") {
+      wiki_url <- "https://en.wikipedia.org/wiki/Queen_(band)"
+    } else if (artist == "Prince") {
+      wiki_url <- "https://en.wikipedia.org/wiki/Prince_(musician)"
+    } else {
+      # For other artists, handle the name format as before
+      if (length(strsplit(artist, " ")[[1]]) == 1) {
+        # If it is only one word, use the artist name as is
+        wiki_url <- paste0("https://en.wikipedia.org/wiki/", artist)
+      } else {
+        # If it is more than two words, separate the letters by _
+        wiki_url <- paste0("https://en.wikipedia.org/wiki/", gsub(" ", "_", artist))
+      }
+    }
+    
+    # Try to read the HTML content of the webpage
+    tryCatch({
+      page <- read_html(wiki_url)
+      
+      # Extract all tables from the page
+      tables <- html_table(page, fill = TRUE)
+      
+      labels <- page %>% html_elements(css = ".infobox-label") %>% html_text()
+      info <- page %>% html_elements(css = ".infobox-data") %>% html_text()
+      
+      # 3. Extract results --------------------------------
+      # Check if label "Origin" is present
+      if ("Origin" %in% labels) {
+        country <- info[labels == 'Origin']
+      } else if ("Born" %in% labels) {
+        # If "Origin" is not found, check if "Born" is present
+        born_label <- info[labels == 'Born']
+        # Extract last two words from "Born" label
+        location <- unlist(strsplit(born_label, "\\s+"))
+        country <- paste(tail(location, 2), collapse = " ")
+      } else {
+        # If neither "Origin" nor "Born" is present, assign NA to "Country"
+        country <- NA
+      }
+      
+      if ("Years active" %in% labels) {
+        activity <- info[labels == 'Years active']
+      } else {
+        activity <- NA
+      }
+      
+      # Append data to the location_data data frame
+      artist_info <- data.frame(artist = artist, country = country, activity = activity)
+      wikipedia_data <- rbind(wikipedia_data, artist_info)
+    }, error = function(e) {
+      cat("Error for artist:", artist, "\n")
+    })
+  }
+  
+  return(wikipedia_data)
+}
+
+# We call the function
+wikipedia_data <- get_wikidata(artists_data)
+
+
+# DATA SHAPE -----------------------------------
+
+# We create a function to calculate total years of activity for each observation
+calculate_total_activity <- function(activity_string) {
+  
+  # Check if activity_string is NA
+  if (is.na(activity_string)) {
+    return(NA)
+  }
+
+  # Replace 'present' with '2023'
+  activity_string <- gsub("present", "2023", activity_string, ignore.case = TRUE)
+  
+  # Remove content inside square brackets
+  activity_string <- gsub("\\[.*?\\]", "", activity_string)
+  
+  # Remove content inside parentheses
+  activity_string <- gsub("\\(.*?\\)", "", activity_string)
+  
+  # Add space between four consecutive digits
+  activity_string <- gsub("(\\d{4})", "\\1 ", activity_string)
+  
+  # Extract all substrings that look like pairs of years separated by '-' or ','
+  year_pairs <- str_extract_all(activity_string, "\\b\\d{4}\\b\\s*(?:–|,)\\s*\\b\\d{4}\\b")[[1]]
+  
+  # If no pairs found, return 0
+  if (length(year_pairs) == 0) {
+    return(0)
+  }
+  
+  # Initialize total years
+  total_years <- 0
+  
+  # Iterate over each pair of years
+  for (pair in year_pairs) {
+    # Extract individual years from the pair
+    years <- str_extract_all(pair, "\\d{4}")[[1]]
+    
+    # Convert years to numeric
+    years <- as.numeric(years)
+    
+    # Calculate the difference between consecutive years and add to the total
+    total_years <- total_years + sum(diff(years))
+  }
+  
+  return(total_years)
+}
+
+# Apply the function to each observation in the 'activity' column
+wikipedia_data$total_activity <- sapply(wikipedia_data$activity, calculate_total_activity)
+
+# We write this new table to our relational database
+dbWriteTable(connection, "wikipedia_data", wikipedia_data, overwrite = TRUE, keys='artist')
+
+```
+
+**Table 5: Wikipedia Data**
+
+```{r}
+# We check it
+check_table('finalassignment.sqlite', 'wikipedia_data')
+```
+
+
+# 3. Analysis {#exercise-3}
+
+For the purposes how our analysis we create two different tables using SQL:
+
+
+```{r}
+
+# STEP 9. WE CREATE THE DATA FROM OUR RELATIONAL DATABASE USING SQL -----------------------
+
+# We open the connection once again
+connection <- dbConnect(RSQLite::SQLite(), mydatabase)
+
+# Drop if exists
+#dbExecute(connection, "DROP TABLE IF EXISTS albums_final_data", verbose = FALSE)
+#dbExecute(connection, "DROP TABLE IF EXISTS toptracks_final_data", verbose = FALSE)
+
+
+# Retrieve the table 
+albums_final_data <- dbGetQuery(connection, "
+WITH albums_final_data AS (
+    SELECT 
+        ad.artist,
+        ad.rank,
+        ad.followers / 1000000 AS followers_in_millions,
+        CAST(ad.popularity AS INTEGER) AS popularity,
+        ad.genre_category,
+        al.total_tracks,
+        al.album_name,
+        al.release_date,
+        al.album_type,
+        al.available_markets,
+        aw.wins,
+        aw.nominations,
+        wd.country,
+        wd.total_activity
+    FROM artists_data ad
+    LEFT JOIN albums_data al ON ad.artist = al.artist
+    LEFT JOIN awards_data aw ON ad.artist = aw.artist
+    LEFT JOIN wikipedia_data wd ON ad.artist = wd.artist
+)
+SELECT * FROM albums_final_data
+")
+```
+
+**Combined Table 1: Albums Final Data**
+```{r}
+# Print the variables of the table
+print(names(albums_final_data))
+```
+
+
+```{r}
+# We create another combined table for top tracks data 
+toptracks_final_data <- dbGetQuery(connection, "
+WITH toptracks_final_data AS (
+    SELECT 
+        ad.artist,
+        ad.rank,
+        ad.followers / 1000000 AS followers_in_millions,
+        CAST(ad.popularity AS INTEGER) AS popularity,
+        ad.genre_category,
+        tt.track_name,
+        tt.track_popularity,
+        tt.album_name,
+        al.release_date,  
+        aw.wins,
+        aw.nominations,
+        wd.country,
+        wd.total_activity
+    FROM artists_data ad
+    LEFT JOIN top_tracks_data tt ON ad.artist = tt.artist
+    LEFT JOIN awards_data aw ON ad.artist = aw.artist
+    LEFT JOIN wikipedia_data wd ON ad.artist = wd.artist
+    LEFT JOIN albums_data al ON tt.album_name = al.album_name
+)
+SELECT * FROM toptracks_final_data
+")
+
+```
+
+**Combined Table 2: Top Tracks Final Data**
+```{r}
+# Print the variables of the table
+print(names(toptracks_final_data))
+```
+
+It is worth noting that:
+
+  * For some tables other variables such as **‘year’**, **‘decade’** and **‘origin’** will be added to give shape to the graphs.
+  * Most of the variables are compared with **popularity**, which is understood here as a representation of how much an artist's music engages and triumphs. 
+
+
+
+## 3.1. What contributes to enduring engagement?
+
+### 3.1.1 Albums Produced
+
+The study reveals a robust correlation between an artist's prolific album production and their current popularity. This correlation aligns with the intuitive understanding that sustained album releases indicate ongoing public interest and demand for an artist's work.
+
+```{r}
+
+# STEP 10. WE ELABORATE ALL THE GRAPHS FOR THE ANALYSIS ---------------------
+
+# GRAPH 1) Scatter plot: Albums vs Popularity
+# Sum the number of albums by artist
+album_sum_by_artist <- albums_final_data %>%
+  filter(album_type == 'album') %>%
+  group_by(artist) %>%
+  summarize(total_albums = n(), popularity_mean = mean(popularity))
+
+# Sum the number of albums and calculate the mean popularity by total_albums
+album_sum_by_total_albums <- album_sum_by_artist %>%
+  group_by(total_albums) %>%
+  summarize(mean_popularity = mean(popularity_mean))
+
+# Create an interactive scatter plot
+albums_popularity <- plot_ly(
+  data = album_sum_by_total_albums,
+  x = ~mean_popularity,
+  y = ~total_albums,
+  text = ~paste("Number of Albums: ", total_albums),  
+  color = I("blue"), 
+  type = "scatter",
+  mode = "markers"
+) %>%
+  add_trace(
+    type = "scatter",
+    mode = "lines",
+    x = ~mean_popularity,
+    y = ~lm(total_albums ~ mean_popularity)$fitted.values,
+    line = list(color = "red"),  
+    name = "Regression Line"
+  ) %>%
+  layout(
+    title = "Graph 1. Total Number of Albums vs Mean Popularity",
+    xaxis = list(title = "Mean Artists' Popularity"),
+    yaxis = list(title = "Total Number of Albums"),
+    coloraxis = list(colorscale = "Viridis")
+  )
+
+# Print the Plotly object to the console
+albums_popularity
+
+```
+
+### 3.1.2 Followers 
+
+The analysis demonstrates a positive relationship between the number of top tracks with high popularity (>75) and an artist's followers. This underscores the pivotal role that popular tracks play in expanding an artist's fan base, as they become ubiquitous and draw in new listeners.
+In this case, we are not using the mean popularity to avoid an endogeneity problem. 
+
+```{r}
+# Graph 2) Scatter plot: Top tracks with more than 75 vs Popularity
+# Filter top tracks with track_popularity > 75
+filtered_toptracks <- toptracks_final_data %>%
+  filter(track_popularity > 75)
+
+# Sum the number of top tracks and calculate the mean followers by artist
+toptracks_sum_by_artist <- filtered_toptracks %>%
+  group_by(artist) %>%
+  summarize(total_toptracks = n(), followers_mean = mean(followers_in_millions))
+
+# Sum the number of top tracks and calculate the mean followers by total_toptracks
+toptracks_sum_by_total_toptracks <- toptracks_sum_by_artist %>%
+  group_by(total_toptracks) %>%
+  summarize(mean_followers = mean(followers_mean))
+
+# Create an interactive scatter plot
+toptracks_followers <- plot_ly(
+  data = toptracks_sum_by_total_toptracks,
+  x = ~mean_followers,
+  y = ~total_toptracks,
+  text = ~paste("Number of Top Tracks: ", total_toptracks),
+  color = I("blue"),  
+  type = "scatter",
+  mode = "markers"
+) %>%
+  add_trace(
+    type = "scatter",
+    mode = "lines",
+    x = ~mean_followers,
+    y = ~lm(total_toptracks ~ mean_followers)$fitted.values,
+    line = list(color = "red"), 
+    name = "Regression Line"
+  ) %>%
+  layout(
+    title = "Graph 2. Total Number of Top Tracks vs Mean Number of Followers",
+    xaxis = list(title = "Mean Artists' Followers"),
+    yaxis = list(title = "Total Number of Top Tracks (> 75 track popularity"),
+    coloraxis = list(colorscale = "Viridis")
+  )
+
+# Print the plot
+toptracks_followers
+```
+
+### 3.1.3 Awards Received
+
+Artists with Grammy Awards, the pinnacle of industry recognition, exhibit a strong correlation with high popularity. This correlation reinforces the notion that musical quality, coupled with industry accolades, significantly contributes to an artist's widespread appeal. 
+
+```{r}
+# Graph 3) Scatter plot: Grammy Wins vs Popularity
+#Remove rows with NA values in 'wins', 'nominations', and 'popularity'
+cleaned_awards_data_wins <- albums_final_data %>%
+  filter(!is.na(wins) & !is.na(popularity))
+
+# Remove rows with NA values in 'nominations', 'popularity'
+cleaned_awards_data_nominations <- albums_final_data %>%
+  filter(!is.na(nominations) & !is.na(popularity))
+
+# Assuming your data frame is named cleaned_awards_data_wins
+mean_popularity_per_wins <- cleaned_awards_data_wins %>%
+  group_by(wins) %>%
+  summarise(mean_popularity = mean(popularity, na.rm = TRUE))
+
+# Create an interactive scatter plot with Plotly
+scatter_plot_wins <- plot_ly(
+  data = mean_popularity_per_wins,
+  y = ~wins,  
+  x = ~mean_popularity,  
+  type = "scatter",
+  mode = "markers",
+  color = I("blue"),  
+  text = ~paste("Wins: ", wins, "<br>Mean Popularity: ", round(mean_popularity, 2))
+) %>%
+  add_lines(
+    y = ~wins,  
+    x = ~fitted(lm(mean_popularity ~ wins, data = mean_popularity_per_wins)), 
+    type = "scatter",
+    mode = "lines",
+    line = list(color = "red"),
+    name = "Regression Line"
+  ) %>%
+  layout(
+    title = "Graph 3. Grammy Wins vs Mean Popularity",
+    xaxis = list(title = "Mean Artists' Popularity"),  
+    yaxis = list(title = "Number of Wins")  
+  )
+
+# Print the graph
+scatter_plot_wins
+
+
+# Graph 4) Scatter plot: Grammy Nominations vs Popularity
+mean_popularity_per_nominations <- cleaned_awards_data_nominations %>%
+  group_by(nominations) %>%
+  summarise(mean_popularity = mean(popularity, na.rm = TRUE))
+
+# Create an interactive scatter plot
+scatter_plot_nominations <- plot_ly(
+  data = mean_popularity_per_nominations,
+  y = ~nominations,  
+  x = ~mean_popularity,  
+  type = "scatter",
+  mode = "markers",
+  color = I("blue"),  
+  text = ~paste("Nominations: ", nominations, "<br>Mean Popularity: ", round(mean_popularity, 2))
+) %>%
+  add_lines(
+    y = ~nominations, 
+    x = ~fitted(lm(mean_popularity ~ nominations, data = mean_popularity_per_nominations)),
+    type = "scatter",
+    mode = "lines",
+    line = list(color = "red"),
+    name = "Regression Line"
+  ) %>%
+  layout(
+    title = "Graph 4. Grammy Nominations vs Mean Popularity",
+    xaxis = list(title = "Mean Artists' Popularity"),  
+    yaxis = list(title = "Number of Nominations")  
+  )
+
+# Print the graph
+scatter_plot_nominations
+```
+
+### 3.1.4 Music Genra Produced
+
+Examining genre-specific album production unveils interesting trends, with rock dominating historically, and hip hop/rap steadily gaining ground. The popularity of artists across genres varies, with hip hop/rap taking the lead, followed by reggae, rock, soul/R&B, and pop. One interesting thing here is how Reggae happens to be so popular, when Bob Marley is the only artist in our database linked to this genre. This shows how influential can one’s legacy be.
+
+
+```{r}
+# Graph 5) Line Graph: Music Genre over the decades
+# Convert 'release_date' to year
+albums_final_data$year <- as.numeric(substr(albums_final_data$release_date, 1, 4))
+
+# Calculate the percentage of times each genre appears over the total observations in each year
+genre_percentage <- albums_final_data %>%
+  group_by(year, genre_category) %>%
+  summarize(percentage = n() / nrow(albums_final_data) * 100) %>%
+  filter(!is.na(percentage) & !is.na(genre_category))   
+
+# Create a line plot for genre percentage over the years
+line_plot <- ggplot(genre_percentage, aes(x = year, y = percentage, color = genre_category)) +
+  geom_line() +
+  labs(
+    title = "Graph 5. Evolution of Music Genre over time",
+    x = "Decade",
+    y = "Percentage of albums produced by music genre"
+  ) +
+  theme_minimal()
+
+# Convert the ggplot object to an interactive plot
+line_plot_interactive <- ggplotly(line_plot)
+
+# Print the graph
+line_plot_interactive
+```
+
+
+```{r}
+# Graph 6) Boxplot: Popularity by Genre Category
+# Filter out 'Punk', 'Reggae', and NA values from genre_category
+filtered_data <- albums_final_data %>%
+  filter(!is.na(genre_category))
+
+# Create an interactive boxplot with genres (excluding 'Punk', 'Reggae', and NA)
+boxplot_interactive_filtered <- plot_ly(
+  x = ~genre_category,
+  y = ~popularity,
+  data = filtered_data,
+  type = "box",
+  boxpoints = "all",
+  jitter = 0.3,
+  pointpos = -1.8,
+  color = ~genre_category,
+  colors = c(
+  'blue', 'orange', 'green', 'red', 'purple',
+  'brown', 'pink', 'gray', 'yellow', 'cyan', 'darkblue'),
+  opacity = 0.7
+) %>%
+  layout(
+    title = "Graph 6. Popularity by Music Genre",
+    xaxis = list(title = "Music Genre"),
+    yaxis = list(title = "Artists' Popularity"),
+    showlegend = FALSE
+  )
+
+# Print the graph
+boxplot_interactive_filtered
+```
+
+
+```{r}
+# Graph 7) Barplot: Top tracks' genre category over the decades
+# We create the variable 'Decade'
+# Convert 'release_date' to year
+toptracks_final_data$year <- as.numeric(substr(toptracks_final_data$release_date, 1, 4))
+toptracks_final_data$decade <- cut(toptracks_final_data$year, breaks = c(1960, 1970, 1980, 1990, 2000, 2010, 2020), labels = c("1960-1970", "1970-1980", "1980-1990", "1990-2000", "2000-2010", "2010-2020"))
+
+# Filter the data
+toptracks_final_data_filter <- toptracks_final_data %>%
+  arrange(desc(track_popularity)) %>%
+  group_by(decade) %>%
+  slice_head(n = 10) %>%
+  ungroup()
+
+genre_count_per_decade <- toptracks_final_data_filter %>%
+  count(decade, genre_category, name = "genre_count")
+
+# Calculate percentage within each decade
+genre_count_per_decade <- genre_count_per_decade %>%
+  group_by(decade) %>%
+  mutate(percentage = genre_count / sum(genre_count) * 100)
+
+# Create an interactive bar plot
+plot_ly(genre_count_per_decade, x = ~decade, y = ~genre_count, color = ~genre_category, type = "bar", text = ~paste(genre_category, sprintf("%.2f%%", percentage), "<br>", genre_count)) %>%
+  layout(title = "Graph 7. Top tracks' popularity by music genre and decade",
+         xaxis = list(title = "Decade"),
+         yaxis = list(title = "Percentage of Top tracks popularity"),
+         barmode = "stack")
+```
+
+
+### 3.1.5 Country of Origin
+
+Success in the music industry often aligns with artists from specific countries, particularly the US and the UK. While these artists gain global recognition, the study emphasizes the importance of a supportive network and effective global content distribution to sustain the engagement of music.
+
+
+```{r}
+# Graph 8) Map: Artists by nationality and markets where their albums are available
+
+# We create the variable 'Origin'
+# Function to extract the last word from a location string
+extract_last_word <- function(location) {
+  words <- unlist(strsplit(location, ",\\s*"))
+  last_word <- words[length(words)]
+  return(last_word)
+}
+
+# Apply the function to create a new variable 
+albums_final_data$origin <- sapply(albums_final_data$country, extract_last_word)
+
+# Map specific conditions
+albums_final_data$origin <- ifelse(albums_final_data$origin %in% c("U.S.", "US", "Rhode Island[1]: 24 \nNew York City\n", "United States", "California", "Tennessee"), "US", ifelse(albums_final_data$origin %in% c("Northern Ireland", "England"), "GB", ifelse(albums_final_data$origin %in% c("Canada"), "CA", ifelse(albums_final_data$origin %in% c("Australia"), "AU", ifelse(albums_final_data$origin %in% c("Jamaica"), "JM", ifelse(albums_final_data$origin %in% c("Ireland"), "IE",albums_final_data$origin))))))
+
+# Filter out rows with NAs in 'origin' or 'available_markets'
+filtered_data <- albums_final_data %>% filter(!is.na(origin) & !is.na(available_markets))
+
+# Get unique origins and available markets
+selected_origins <- unique(filtered_data$origin)
+selected_markets <- unique(unlist(strsplit(filtered_data$available_markets, ", ")))
+
+# Filter world map data for selected origins and markets
+world <- ne_countries(returnclass = "sf")
+
+# Create a color column based on 'origin' and 'available_markets'
+world_colors <- world %>%
+  mutate(color = ifelse(iso_a2 %in% selected_origins, "orange", 
+                        ifelse(iso_a2 %in% selected_markets, "lightgreen", "white")))
+
+# Create the leaflet map
+map <- leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = world_colors, 
+              fillColor = ~color, 
+              fillOpacity = 0.5, 
+              popup = ~name,
+              stroke = FALSE) %>%
+  addLegend("bottomright", 
+            colors = c("orange", "lightgreen"), 
+            labels = c("Origin of the Artist", "Available Markets of the Albums"),
+            opacity = 0.5,
+            title = "Legend") %>%
+  setView(lng = -95, lat = 37, zoom = 2) 
+
+```
+
+**Graph 8. Origin of the Artist and Markets where the albums are available** 
+```{r}
+# Show the map
+map
+```
+
+```{r}
+# Graph 9) Pie Chart: Nationalities of Artists by percentage 
+# We filter the unique artists
+unique_artists <- albums_final_data %>%
+  distinct(artist, .keep_all = TRUE)
+
+# Remove NAs from the 'origin' column
+unique_artists <- unique_artists[!is.na(unique_artists$origin), ]
+
+# Compute the proportion of times each 'origin' appears
+country_proportions <- unique_artists %>%
+  group_by(origin) %>%
+  summarize(proportion = n() / nrow(unique_artists) * 100) %>%
+  arrange(desc(proportion))
+
+# Create an interactive pie chart 
+pie_chart_interactive <- plot_ly(
+  labels = ~country_proportions$origin,
+  values = ~country_proportions$proportion,
+  type = "pie",
+  textinfo = "label+percent",
+  insidetextorientation = "radial",
+  marker = list(colors = c('lightgreen', 'orange', 'purple', 'pink', 'blue', 'yellow'))
+) %>%
+  layout(
+    title = "Graph 9. Origin of the Artists"
+  )
+
+# Print the chart
+pie_chart_interactive
+```
+
+### 3.1.6 Topic
+
+Additionally, the analysis of frequently mentioned words in albums reveals 'love' as a predominant theme. This suggests that emotional connection and relatable content contribute significantly to an artist's enduring success.
+
+```{r}
+# Graph 10) Words more used in albums
+# Get a stop words list using 'tm' package + add some more 
+stop_words <- c(stopwords("en"), "live", "edition)", "(live", "-", "&", "(deluxe", "(live)", "anniversary", "/","remaster)", "(expanded", "(remastered)", "sessions", "vol.", "deluxe", "new", "version)", "songs",      "(deluxe)", "(super","complete", "(remastered", "collection", "deluxe)","show,", "hits", "ed", "sullivan", "(the", "edition", "original", "2", "(50th")
+
+# Create a corpus of words from album names
+corpus <- unlist(strsplit(tolower(albums_final_data$album_name), "\\s+"))
+
+# Remove stop words from the corpus
+corpus <- corpus[!corpus %in% stop_words]
+
+# Create a frequency table of words
+word_freq <- table(corpus)
+
+# Order the frequency table in descending order
+sorted_word_freq <- sort(word_freq, decreasing = TRUE)
+
+# Extract the top N most repeated words
+top_words <- names(sorted_word_freq)[1:19]
+
+# Filter out words that are not in the top_words list
+filtered_word_freq <- sorted_word_freq[top_words]
+
+# Convert the filtered word frequency to a data frame
+word_freq_df <- data.frame(word = names(filtered_word_freq), freq = as.numeric(filtered_word_freq))
+
+# Create a bubble chart using wordcloud2
+wordschart1 <- wordcloud2(word_freq_df, size = 0.7, color = "skyblue", backgroundColor = "white")
+
+```
+
+**Graph 10. Most used words in artists' albums**
+```{r}
+# We see the plot
+wordschart1
+```
+
+
+## 3.2. What does not contribute to enduring engagement?
+
+Contrary to common assumptions, variables such as the number of singles produced, years of activity, and the release of 'live' albums show no significant, or negative correlation with overall artist popularity. This challenges preconceived notions about factors influencing an artist's widespread appeal.
+
+### 3.2.1 Singles Produced 
+```{r}
+# Graph 11) Scatter plot: Singles vs Popularity
+# Sum the number of singles by artist
+single_sum_by_artist <- albums_final_data %>%
+  filter(album_type == 'single') %>%
+  group_by(artist) %>%
+  summarize(total_singles = n(), popularity_mean = mean(popularity))
+
+# Sum the number of singles and calculate the mean popularity by total_singles
+single_sum_by_total_singles <- single_sum_by_artist %>%
+  group_by(total_singles) %>%
+  summarize(mean_popularity = mean(popularity_mean))
+
+# Create an interactive scatter plot 
+singles_popularity <- plot_ly(
+  data = single_sum_by_total_singles,
+  x = ~mean_popularity,
+  y = ~total_singles,
+  text = ~paste("Number of Singles: ", total_singles),
+  color = I("blue"), 
+  type = "scatter",
+  mode = "markers"
+) %>%
+  add_trace(
+    type = "scatter",
+    mode = "lines",
+    x = ~mean_popularity,
+    y = ~lm(total_singles ~ mean_popularity)$fitted.values,
+    line = list(color = "red"),  
+    name = "Regression Line"
+  ) %>%
+  layout(
+    title = "Graph 11. Total Number of Singles  vs Mean Popularity",
+    xaxis = list(title = "Mean Artists' Popularity"),
+    yaxis = list(title = "Total Number of Singles"),
+    coloraxis = list(colorscale = "Viridis")
+  )
+
+# Print the plot
+singles_popularity
+```
+
+### 3.2.2 Years of Activity
+
+```{r}
+# Graph 12) Scatter plot: Years Active vs Popularity
+# Remove rows with NA values in 'total_activity'
+cleaned_albums_data <- albums_final_data %>%
+  filter(!is.na(total_activity))
+
+# Sum the number of activities by artist
+activity_sum_by_artist <- cleaned_albums_data %>%
+  group_by(artist) %>%
+  summarize(total_activity = total_activity, popularity_mean = mean(popularity))
+
+# Sum the number of activities and calculate the mean popularity by total_activity
+activity_sum_by_total_activity <- activity_sum_by_artist %>%
+  group_by(total_activity) %>%
+  summarize(mean_popularity = mean(popularity_mean))
+
+# Create an interactive scatter plot for activity vs mean popularity
+activity_popularity <- plot_ly(
+  data = activity_sum_by_total_activity,
+  x = ~mean_popularity,
+  y = ~total_activity,
+  text = ~paste("Total Activity: ", total_activity),
+  color = I("blue"), 
+  type = "scatter",
+  mode = "markers"
+) %>%
+  add_trace(
+    type = "scatter",
+    mode = "lines",
+    x = ~mean_popularity,
+    y = ~lm(total_activity ~ mean_popularity)$fitted.values,
+    line = list(color = 'red'),
+    name = "Regression Line"
+  ) %>%
+  layout(
+    title = "Graph 12. Artists' Total Activity vs Mean Popularity",
+    xaxis = list(title = "Mean Artists' Popularity"),
+    yaxis = list(title = "Total Years of Activity"),
+    coloraxis = list(colorscale = "Viridis")  
+  )
+
+# Print the plot
+activity_popularity
+```
+
+
+### 3.2.3 Live performances 
+
+```{r}
+# Graph 13) Scatter plot: Number of 'live' albums vs Popularity
+# Filter albums with names containing 'Live' or 'live'
+live_albums_data <- albums_final_data %>%
+  filter(str_detect(album_name, "(?i)live"))
+
+# Sum the number of observations for each artist
+live_albums_sum_by_artist <- live_albums_data %>%
+  group_by(artist) %>%
+  summarize(total_albums = n(), popularity_mean = mean(popularity))
+
+# Sum the number of activities and calculate the mean popularity by total_albums
+activity_sum_by_total_albums <- live_albums_sum_by_artist %>%
+  group_by(total_albums) %>%
+  summarize(popularity_mean = mean(popularity_mean))
+
+# Create an interactive scatter plot 
+live_albums_popularity_tracks <- plot_ly(
+  data = activity_sum_by_total_albums,
+  x = ~popularity_mean,
+  y = ~total_albums,
+  text = ~paste("Total 'Live' Albums: ", total_albums),
+  type = "scatter",
+  mode = "markers",
+  color = I("blue") 
+) %>%
+  add_lines(
+    x = ~popularity_mean,
+    y = ~lm(total_albums ~ popularity_mean, data = activity_sum_by_total_albums)$fitted.values,
+    line = list(color = 'red'),
+    name = "Regression Line"
+  ) %>%
+  layout(
+    title = "Graph 13. Mean Popularity vs Total 'Live' Albums",
+    xaxis = list(title = "Mean Artists' Popularity"),
+    yaxis = list(title = "Total Number of 'Live' Albums")
+  )
+
+# Print the plot
+live_albums_popularity_tracks
+```
+
+In summary, this analysis reveals that prolific album production aligns with sustained popularity, emphasizing ongoing public interest. Chart-topping hits play a crucial role in expanding an artist's fan base, as seen in the positive correlation between top tracks' popularity and follower count. Grammy Awards strongly correlate with heightened artist popularity, highlighting the impact of artistic quality and critical acclaim. Genre trends and global success underscore the multifaceted nature of enduring engagement. These are important insights to understand how music evolves over time. However, it is essential to emphasize the importance of embracing diverse genres and global expressions, opening up to music from the whole world.
+
+
+# 4. Graphs Appendix {#exercise-4}
+
+As a complement to the analysis, some graphs are included below that include specific data for each artist, which may be of interest.
+
+```{r}
+# Graph 14) Scatter Plot: Albums by artist vs Popularity of the artist
+# Create an interactive scatter plot 
+albums_popularity <- plot_ly(
+  data = album_sum_by_artist,
+  x = ~popularity_mean,
+  y = ~total_albums,
+  text = ~artist,  
+  color = ~popularity_mean,  
+  type = "scatter",
+  mode = "markers",
+  marker = list(opacity = 0.7)
+) %>%
+  layout(
+    title = "Graph 14. Total Number of Albums vs Popularity per Artist",
+    xaxis = list(title = "Artist's Popularity"),
+    yaxis = list(title = "Total Number of Albums"),
+    coloraxis = list(colorscale = "Viridis")
+  )
+
+# Print the plot
+albums_popularity
+
+
+# Graph 15) Scatter Plot: Singles by artist vs Popularity of artist
+# Sum the number of singles by artist
+single_sum_by_artist <- albums_final_data %>%
+  filter(album_type == 'single') %>%
+  group_by(artist) %>%
+  summarize(total_singles = n(), popularity_mean = mean(popularity))
+
+# Create an interactive scatter plot 
+singles_popularity <- plot_ly(
+  data = single_sum_by_artist,
+  x = ~popularity_mean,
+  y = ~total_singles,
+  text = ~artist,
+  color = ~popularity_mean,  
+  type = "scatter",
+  mode = "markers",
+  marker = list(opacity = 0.7)
+) %>%
+  layout(
+    title = "Graph 15. Total Number of Singles vs Popularity per Artist",
+    xaxis = list(title = "Artist's Popularity"),
+    yaxis = list(title = "Total Number of Singles"),
+    coloraxis = list(colorscale = "Viridis")
+  )
+
+# Print the plot
+singles_popularity
+
+
+# Graph 16) Scatter plot: Grammy wins by artist vs Popularity of artist
+wins_plot <- plot_ly(
+  data = cleaned_awards_data_wins,
+  x = ~popularity,
+  y = ~wins,
+  text = ~artist,  
+  color = ~wins,
+  type = "scatter",
+  mode = "markers"
+) %>%
+  layout(
+    title = "Graph 16. Total Number of Grammy Wins vs Popularity per Artist",
+    xaxis = list(title = "Artist's Popularity"),
+    yaxis = list(title = "Wins"),
+    coloraxis = list(colorscale = "Viridis")
+  )
+
+# Print the plot
+wins_plot
+
+
+# Graph 17) Scatter plot: Grammy nominations by artist vs Popularity of artist
+nominations_plot <- plot_ly(
+  data = cleaned_awards_data_nominations,
+  x = ~popularity,
+  y = ~nominations,
+  text = ~artist, 
+  color = ~nominations,
+  type = "scatter",
+  mode = "markers"
+) %>%
+  layout(
+    title = "Graph 17. Total Number of Grammy Nominations vs Popularity per Artist",
+    xaxis = list(title = "Artist's Popularity"),
+    yaxis = list(title = "Nominations"),
+    coloraxis = list(colorscale = "Viridis")
+  )
+
+# Print the plot
+nominations_plot
+
+
+# Graph 18) Scatter plot: Top tracks by artists vs Followers of artist
+toptracks_followers <- plot_ly(
+  data = toptracks_sum_by_artist,
+  x = ~followers_mean,
+  y = ~total_toptracks,
+  text = ~artist,
+  color = ~followers_mean,  
+  type = "scatter",
+  mode = "markers"
+) %>%
+  layout(
+    title = "Graph 18. Total Number of Top Tracks vs Followers per Artist",
+    xaxis = list(title = "Artist's Followers"),
+    yaxis = list(title = "Total Number of Top Tracks (> 75 track popularity)"),
+    coloraxis = list(colorscale = "Viridis")  
+  )
+
+# Print the plot
+toptracks_followers
+
+
+# Graph 19) Years of activity vs Popularity
+# Create an interactive scatter plot
+activity_popularity <- plot_ly(
+  data = cleaned_albums_data,
+  x = ~popularity,
+  y = ~total_activity,
+  text = ~artist,  
+  color = ~popularity, 
+  type = "scatter",
+  mode = "markers",
+  marker = list(
+    opacity = 0.7  
+  )
+) %>%
+  layout(
+    title = "Graph 19. Total Years of Activity vs Popularity per Artist",
+    xaxis = list(title = "Artist's Popularity"),
+    yaxis = list(title = "Total Years of Activity"),
+    coloraxis = list(colorscale = "Viridis")  
+  )
+
+# Print the plot
+activity_popularity
+
+```
+
+
+# 5. Code Appendix {#exercise-5}
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE} 
+
+```
+
