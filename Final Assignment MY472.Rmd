@@ -12,7 +12,7 @@ output:
 
 **“Rolling Stone Magazine ranked their 100 greatest musical artists of all time. At the end of 2023, how has their music endured? Are there any features or characteristics that seem to explain enduring engagement?”**
 
-Music, a ubiquitous presence in our lives, serves as a powerful cultural force. Understanding its evolution over time and unraveling the factors that contribute to the enduring impact of certain compositions is a compelling endeavor. This exploration seeks to dissect and analyze the elements that shape the longevity, influence, and broader impact of music.
+Music is everywhere in our lives, playing a significant role as a cultural force. Exploring its evolution and figuring out what makes certain compositions stand the test of time is an intriguing endeavor. In this exploration, we aim to break down and analyze the elements that contribute to the enduring impact, influence, and broader significance of music.
 
 For more information about this project, you can find here the [Final Assignment MY472 GitHub Repository](https://github.com/rsuntab/Final-Assignment-MY472).
 
@@ -613,7 +613,7 @@ check_table('finalassignment.sqlite', 'top_tracks_data')
 Information has also been obtained from two other sources:
 
 3) **Grammy Awards**: Tracks the number of wins and nominations an artist has received from Grammy Awards. Artists not found on the Grammy Awards website are still included in the dataset with NA values.
-4) **Wikipedia**: Extracts information about the nationality of artists and their total years of activity, using information from ‘Origin’, ‘Born’ and ‘Years Active’ in Wikipedia.
+4) **Wikipedia**: Extracts information about the nationality of artists and their total years of activity, using information from ‘Origin’, ‘Born’ and ‘Years Active’ in Wikipedia. Some regular expressions have been used in order to read the data properly.
 
 
 The structure of the tables is as follows:
@@ -948,14 +948,14 @@ check_table('finalassignment.sqlite', 'wikipedia_data')
 ```
 
 
-# 3. Analysis {#exercise-3}
+# 3. Analysis: How has music endured? {#exercise-3}
 
 For the purposes how our analysis we create two different tables using SQL:
 
 
 ```{r}
 
-# STEP 9. WE CREATE THE DATA FROM OUR RELATIONAL DATABASE USING SQL -----------------------
+# STEP 9. WE LOAD THE DATA FROM OUR RELATIONAL DATABASE USING SQL -----------------------
 
 # We open the connection once again
 connection <- dbConnect(RSQLite::SQLite(), mydatabase)
@@ -1036,8 +1036,8 @@ print(names(toptracks_final_data))
 
 It is worth noting that:
 
-  * For some tables other variables such as **‘year’**, **‘decade’** and **‘origin’** will be added to give shape to the graphs.
-  * Most of the variables are compared with **popularity**, which is understood here as a representation of how much an artist's music engages and triumphs. 
+  * For some graphs other variables such as **‘year’**, **‘decade’** and **‘origin’** will be added to give shape to the graphs.
+  * Most of the variables are compared with **'popularity'**, which is understood here as a representation of how much an artist's music engages and triumphs. 
 
 
 
@@ -1095,8 +1095,11 @@ albums_popularity
 
 ### 3.1.2 Followers 
 
-The analysis demonstrates a positive relationship between the number of top tracks with high popularity (>75) and an artist's followers. This underscores the pivotal role that popular tracks play in expanding an artist's fan base, as they become ubiquitous and draw in new listeners.
-In this case, we are not using the mean popularity to avoid an endogeneity problem. 
+The analysis demonstrates a positive relationship between the number of top tracks with high popularity (>75) and artists' followers. This underscores the pivotal role that popular tracks play in expanding an artist's fan base, as they become ubiquitous and draw in new listeners.
+Please note: 
+    
+    * In this case, we are not using the mean popularity to avoid an endogeneity problem. 
+    * Even though there is an outlier, the correlation would still be positive is we omitted it.
 
 ```{r}
 # Graph 2) Scatter plot: Top tracks with more than 75 vs Popularity
@@ -1135,7 +1138,7 @@ toptracks_followers <- plot_ly(
   layout(
     title = "Graph 2. Total Number of Top Tracks vs Mean Number of Followers",
     xaxis = list(title = "Mean Artists' Followers"),
-    yaxis = list(title = "Total Number of Top Tracks (> 75 track popularity"),
+    yaxis = list(title = "Total Number of Top Tracks (> 75 track popularity)"),
     coloraxis = list(colorscale = "Viridis")
   )
 
@@ -1145,7 +1148,7 @@ toptracks_followers
 
 ### 3.1.3 Awards Received
 
-Artists with Grammy Awards, the pinnacle of industry recognition, exhibit a strong correlation with high popularity. This correlation reinforces the notion that musical quality, coupled with industry accolades, significantly contributes to an artist's widespread appeal. 
+Musicians who have received Grammy Awards, the highest recognition in the industry, show a clear link to elevated popularity. This connection underscores the idea that a combination of musical excellence and industry accolades significantly adds to an artist's broad appeal.
 
 ```{r}
 # Graph 3) Scatter plot: Grammy Wins vs Popularity
@@ -1225,7 +1228,7 @@ scatter_plot_nominations
 
 ### 3.1.4 Music Genra Produced
 
-Examining genre-specific album production unveils interesting trends, with rock dominating historically, and hip hop/rap steadily gaining ground. The popularity of artists across genres varies, with hip hop/rap taking the lead, followed by reggae, rock, soul/R&B, and pop. One interesting thing here is how Reggae happens to be so popular, when Bob Marley is the only artist in our database linked to this genre. This shows how influential can one’s legacy be.
+Examining genre-specific album production unveils interesting trends, with rock dominating historically, and hip hop/rap steadily gaining ground. The popularity of artists across genres varies, with hip hop/rap taking the lead, followed by reggae, rock, soul/R&B, and pop. A notable observation is the popularity of reggae, primarily attributed to Bob Marley as the sole artist in our database associated with this genre. This underscores the impact of an artist's legacy and the loyalty of their fan base. For example, while rock or pop may have a broader listener base, individual artists in these genres may not enjoy the same level of popularity.
 
 
 ```{r}
@@ -1415,7 +1418,7 @@ pie_chart_interactive
 
 ### 3.1.6 Topic
 
-Additionally, the analysis of frequently mentioned words in albums reveals 'love' as a predominant theme. This suggests that emotional connection and relatable content contribute significantly to an artist's enduring success.
+Additionally, the analysis of frequently mentioned words in albums reveals **'love'** as a predominant theme. This suggests that emotional connection and relatable content contribute significantly to an artist's enduring success.
 
 ```{r}
 # Graph 10) Words more used in albums
@@ -1457,7 +1460,7 @@ wordschart1
 
 ## 3.2. What does not contribute to enduring engagement?
 
-Contrary to common assumptions, variables such as the number of singles produced, years of activity, and the release of 'live' albums show no significant, or negative correlation with overall artist popularity. This challenges preconceived notions about factors influencing an artist's widespread appeal.
+Contrary to common assumptions, variables such as the number of singles produced, years of activity, and the release of 'live' albums show no significant, or even negative correlation with artists' popularity. This challenges preconceived notions about factors influencing an artist's widespread appeal.
 
 ### 3.2.1 Singles Produced 
 ```{r}
@@ -1492,7 +1495,7 @@ singles_popularity <- plot_ly(
     name = "Regression Line"
   ) %>%
   layout(
-    title = "Graph 11. Total Number of Singles  vs Mean Popularity",
+    title = "Graph 11. Total Number of Singles vs Mean Popularity",
     xaxis = list(title = "Mean Artists' Popularity"),
     yaxis = list(title = "Total Number of Singles"),
     coloraxis = list(colorscale = "Viridis")
@@ -1550,7 +1553,7 @@ activity_popularity
 ```
 
 
-### 3.2.3 Live performances 
+### 3.2.3 Live albums
 
 ```{r}
 # Graph 13) Scatter plot: Number of 'live' albums vs Popularity
@@ -1585,7 +1588,7 @@ live_albums_popularity_tracks <- plot_ly(
     name = "Regression Line"
   ) %>%
   layout(
-    title = "Graph 13. Mean Popularity vs Total 'Live' Albums",
+    title = "Graph 13. Total 'Live' Albums vs Mean Popularity",
     xaxis = list(title = "Mean Artists' Popularity"),
     yaxis = list(title = "Total Number of 'Live' Albums")
   )
@@ -1599,7 +1602,7 @@ In summary, this analysis reveals that prolific album production aligns with sus
 
 # 4. Graphs Appendix {#exercise-4}
 
-As a complement to the analysis, some graphs are included below that include specific data for each artist, which may be of interest.
+As a complement to the analysis, some graphs are included below including specific data for each artist, which may be of interest.
 
 ```{r}
 # Graph 14) Scatter Plot: Albums by artist vs Popularity of the artist
