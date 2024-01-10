@@ -1098,8 +1098,8 @@ albums_popularity
 The analysis demonstrates a positive relationship between the number of top tracks with high popularity (>75) and artists' followers. This underscores the pivotal role that popular tracks play in expanding an artist's fan base, as they become ubiquitous and draw in new listeners.
 Please note: 
     
-    * In this case, we are not using the mean popularity to avoid an endogeneity problem. 
-    * Even though there is an outlier, the correlation would still be positive is we omitted it.
+1) In this case, we are not using the mean popularity to avoid an endogeneity problem. 
+2) Even though there is an outlier, the correlation would still be positive is we omitted it.
 
 ```{r}
 # Graph 2) Scatter plot: Top tracks with more than 75 vs Popularity
@@ -1597,7 +1597,7 @@ live_albums_popularity_tracks <- plot_ly(
 live_albums_popularity_tracks
 ```
 
-In summary, this analysis reveals that prolific album production aligns with sustained popularity, emphasizing ongoing public interest. Chart-topping hits play a crucial role in expanding an artist's fan base, as seen in the positive correlation between top tracks' popularity and follower count. Grammy Awards strongly correlate with heightened artist popularity, highlighting the impact of artistic quality and critical acclaim. Genre trends and global success underscore the multifaceted nature of enduring engagement. These are important insights to understand how music evolves over time. However, it is essential to emphasize the importance of embracing diverse genres and global expressions, opening up to music from the whole world.
+In summary, the analysis uncovers that factors such as prolific album production, lyrical themes, and chosen music genre significantly impact the enduring quality of an artist's music. These insights contribute to a better understanding of the evolving nature of music over time. However, it is essential to emphasize the importance of embracing diverse genres and global expressions, opening up to music from the whole world.
 
 
 # 4. Graphs Appendix {#exercise-4}
