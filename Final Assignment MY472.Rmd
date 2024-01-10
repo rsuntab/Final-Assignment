@@ -1,12 +1,14 @@
 ---
-Title: "Final Assignment MY472"
-Author: "202326921"
-Date: "10 January 2024"
 output: 
   html_document:
     toc: true
     toc_float: true
 ---
+
+    * Title: "Final Assignment MY472"
+    * Author: "202326921"
+    * Date: "10 January 2024"
+
 
 # 1. Introduction {#exercise-1}
 
